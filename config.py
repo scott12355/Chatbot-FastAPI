@@ -4,3 +4,7 @@ MODEL_CONFIG = {
     "num_return_sequences": 1,
     "batch_size": 8
 } 
+
+RAG_CONFIG = {
+    "path": "documents"
+}
