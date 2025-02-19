@@ -6,7 +6,6 @@ from config import MODEL_CONFIG, RAG_CONFIG
 from typing import Dict, Any
 from fastapi.responses import JSONResponse
 import os
-import numpy as np
 from PyPDF2 import PdfReader
 import chromadb
 
@@ -27,8 +26,8 @@ chroma_client = chromadb.PersistentClient(path="./chroma_db")
 
 # Create or get collection
 collection = chroma_client.get_or_create_collection(
-    name="documents",
-    metadata={"hnsw:space": "cosine"}
+    name="RagDocuments",
+    metadata={"hnsw:space": "cosine"}  # cosine similarity will be used to measure the distance between vectors
 )
 
 def load_pdfs(directory):
@@ -56,7 +55,7 @@ def chunk_text(text, chunk_size=800, overlap=50):
         # Move index forward by chunk_size - overlap
         i += (chunk_size - overlap)
         
-        # If we're near the end and have leftover words that are less than overlap
+        # If near the end and have leftover words that are less than overlap
         if i < len(words) and len(words) - i < overlap:
             break
     
@@ -82,7 +81,7 @@ if collection.count() == 0:
         ids=[f"doc_{i}" for i in range(len(all_chunks))]
     )
 
-def search_docs(query, top_k=6):
+def search_docs(query, top_k=3):
     query_embedding = embeddings_model.encode(query)
     results = collection.query(
         query_embeddings=[query_embedding.tolist()],
@@ -93,7 +92,6 @@ def search_docs(query, top_k=6):
 
 # print(search_docs("how much employment in manchester"))
 
-print(search_docs("whats the night life in Manchester like?"))
 # Initialize the LLM
 try:
     pipe = pipeline(
@@ -109,21 +107,14 @@ except Exception as e:
     raise RuntimeError("Failed to initialize the model")
 
 # Define the system prompt that sets the behavior and role of the LLM
-SYSTEM_PROMPT = """You are an AI assistant dedicated to empowering refugee women by providing them with accurate, supportive, and culturally sensitive information. Your goal is to help them navigate challenges related to education, employment, legal rights, healthcare, mental well-being, and social integration.
-Your responses should always be:
-Empathetic & Encouraging: Acknowledge hardships while fostering resilience and self-confidence.
-Actionable & Practical: Offer clear steps, trusted resources, and local support options where possible.
-Culturally Aware & Inclusive: Respect diverse backgrounds, traditions, and sensitivities.
-Safe & Ethical: Avoid legal, medical, or financial advice unless citing verified sources. Always prioritize user safety and well-being.
-If a question involves sensitive topics such as legal asylum processes, domestic violence, or urgent medical concerns, direct users to relevant professional organizations or helplines in their country. When discussing education, jobs, or financial independence, focus on accessible opportunities, online learning, remote work, and community support networks.
-Above all, inspire confidence, self-sufficiency, and hope in every response."""
+SYSTEM_PROMPT = """You are a helpful AI assistant to educate people on the city of Manchester in England"""
 
 # Serve the API docs as our landing page
 app = FastAPI(docs_url="/",
               title="21312701 - Chatbot Prof of Concept",
               version="1")
 
-@app.get("/generate", 
+@app.get("/generateSingleResponse", 
     responses={
         200: {
             "description": "Successful response",
@@ -167,7 +158,7 @@ app = FastAPI(docs_url="/",
         }
     }
 )
-async def generate(input: str) -> Dict[str, str]:
+async def generateSingleResponse(input: str):
     """
     Generate AI responses.
     
@@ -187,20 +178,36 @@ async def generate(input: str) -> Dict[str, str]:
     if len(input) > 1000:  # Arbitrary limit, adjust as needed
         raise HTTPException(status_code=400, detail="Input text too long")
     
+    # search Vector Database for user input. 
+    RAG_Results = search_docs(input, 3)
+    #print(RAG_Results)
+    
+    combined_input = f"""
+     Here is the users questions: {input}.
+     
+    Use the following information to assist in answering the users question. Do not make anything up or guess. 
+    If you don't know, simply let the user know. 
+    {RAG_Results}
+    """
+    
     try:
         # Combine system prompt with user input
         content = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": input}
+            {"role": "user", "content": combined_input}
         ]
         
         # Generate response
         output = pipe(content, num_return_sequences=1, max_new_tokens=250)
         
+        # Extract the generated text from the output
+        
+        generated_text = output[0]["generated_text"]
+        print(generated_text)
         # Structure the response
         return {
             "status": "success",
-            "generated_text": output[0]["generated_text"],
+            "generated_text": generated_text, # return only the input prompt and the generated response
         }
         
     except Exception as e:
