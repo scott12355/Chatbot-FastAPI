@@ -1,15 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from transformers import pipeline
-from sentence_transformers import SentenceTransformer
 import torch
 from config import MODEL_CONFIG, RAG_CONFIG
-from typing import Dict, Any
+from typing import Dict, Any, List
 from fastapi.responses import JSONResponse
-import os
-from PyPDF2 import PdfReader
-import chromadb
 from api_schemas import API_RESPONSES
 from VectorDB import *
+from pydantic import BaseModel
+
 
 # Pick the best available device - MPS (Mac), CUDA (NVIDIA), or CPU
 if torch.backends.mps.is_available():
@@ -44,7 +42,7 @@ SYSTEM_PROMPT = """You are a helpful AI assistant to educate people on the city 
 
 # Serve the API docs as our landing page
 app = FastAPI(docs_url="/", title="21312701 - Chatbot Prof of Concept", version="1")
-
+print("App Startup Complete!")
 
 @app.get(
     "/generateSingleResponse",
@@ -99,8 +97,8 @@ async def generateSingleResponse(input: str):
     # print(RAG_Results)
 
     combined_input = f"""
-     Here is the users questions: {input}.
-     
+    Here is the users questions: {input}.
+    
     Use the following information to assist in answering the users question. Do not make anything up or guess. 
     If you don't know, simply let the user know. 
     {RAG_Results}
@@ -130,3 +128,124 @@ async def generateSingleResponse(input: str):
         raise HTTPException(
             status_code=500, detail=f"Error generating response: {str(e)}"
         )
+
+
+
+
+class ChatRequest(BaseModel):
+    conversationHistory: List[Dict[str, str]]
+    chatID: int
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "conversationHistory": [
+                    {
+                        "role": "user",
+                        "content": "hi"
+                    },
+                    {
+                        "role": "api",
+                        "content": "Hello! How can I assist you today?"
+                    },
+                    {
+                        "role": "user",
+                        "content": "whats the weather in MCR"
+                    }
+                ],
+                "chatID": 0
+            }
+        }
+    }
+    
+
+@app.post(
+    "/generateFromChatHistory",
+    responses={
+        200: {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "generated_text": {
+                            "role": "assistant",
+                            "content": "I don't have real-time weather data for Manchester. To get accurate information, please check a weather service like BBC Weather or the Met Office website."
+                        }
+                    }
+                }
+            }
+        },
+        400: API_RESPONSES[400],
+        500: API_RESPONSES[500]
+    }
+)
+
+
+async def generateFromChatHistory(input: ChatRequest):
+    """
+    Generate AI responses based on a given conversation history.
+    Updates Supabase chat
+    
+
+    Args:
+    input (ChatRequest): Structured request containing a list of previous responses"
+    """
+    # Input validation
+    if not input.conversationHistory or len(input.conversationHistory) == 0:
+        raise HTTPException(status_code=400, detail="Conversation history cannot be empty")
+
+    if len(input.conversationHistory) > MODEL_CONFIG["max_conversation_history_size"]:  # Arbitrary limit to avoid overloading LLM, adjust as needed
+        raise HTTPException(status_code=400, detail="Conversation history too long")
+
+    try:
+        
+        
+        
+        # Map Conversation history
+        content = []
+        
+        content.append({"role": "system", "content": "Your name is SophiaAI. You should always be friendly. Use emoji in your responses. "})
+
+        content.extend(
+            {"role": message["role"], "content": message["content"]}
+            for message in input.conversationHistory
+        )
+        
+        # Combine system prompt with user input
+        # search Vector Database for user input.
+        LastQuestion = input.conversationHistory[-1]["content"] # Users last question
+        RAG_Results = search_docs(LastQuestion, 3) 
+        # print(RAG_Results)
+
+        combined_input = f"""
+        
+        Use the following information to assist in answering the users question. Do not make anything up or guess. 
+        {RAG_Results}
+        If you don't know, simply let the user know. 
+        Your responses will be sent directly to the user
+        
+        """
+        content.append({"role": "system", "content": combined_input})
+        # print(content)
+        
+        
+
+        # Generate response
+        output = pipe(content, num_return_sequences=1, max_new_tokens=250)
+
+        # Extract the generated text from the output
+
+        generated_text = output[0]["generated_text"]
+    
+        # Structure the response
+        return {
+            "status": "success",
+            "generated_text": generated_text # generated_text[-1],  # return only the input prompt and the generated response
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error generating response: {str(e)}"
+        ) from e
+
