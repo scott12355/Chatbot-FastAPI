@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from transformers import pipeline
 import torch
+from Supabase import initSupabase
+from supabase import Client
 from config import MODEL_CONFIG, RAG_CONFIG
 from typing import Dict, Any, List
 from fastapi.responses import JSONResponse
@@ -16,10 +18,10 @@ elif torch.cuda.is_available():
     device = torch.device("cuda")
 else:
     device = torch.device("cpu")
-print(device)
+#print(device)
 
 initRAG(device)
-
+supabase: Client = initSupabase()
 
 # print(search_docs("how much employment in manchester"))
 
@@ -71,7 +73,6 @@ print("App Startup Complete!")
         500: API_RESPONSES[500]
     }
 )
-
 async def generateSingleResponse(input: str):
     """
     Generate AI responses.
@@ -86,14 +87,14 @@ async def generateSingleResponse(input: str):
         HTTPException: If input is invalid or generation fails
     """
     # Input validation
-    if not input or len(input.strip()) == 0:
+    if not input or not input.strip():
         raise HTTPException(status_code=400, detail="Input text cannot be empty")
 
     if len(input) > 1000:  # Arbitrary limit, adjust as needed
         raise HTTPException(status_code=400, detail="Input text too long")
 
     # search Vector Database for user input.
-    RAG_Results = search_docs(input, 3) 
+    RAG_Results = search_docs(input, 3)
     # print(RAG_Results)
 
     combined_input = f"""
@@ -127,7 +128,7 @@ async def generateSingleResponse(input: str):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error generating response: {str(e)}"
-        )
+        ) from e
 
 
 
@@ -145,7 +146,7 @@ class ChatRequest(BaseModel):
                         "content": "hi"
                     },
                     {
-                        "role": "api",
+                        "role": "assistant",
                         "content": "Hello! How can I assist you today?"
                     },
                     {
@@ -180,8 +181,6 @@ class ChatRequest(BaseModel):
         500: API_RESPONSES[500]
     }
 )
-
-
 async def generateFromChatHistory(input: ChatRequest):
     """
     Generate AI responses based on a given conversation history.
@@ -199,27 +198,26 @@ async def generateFromChatHistory(input: ChatRequest):
         raise HTTPException(status_code=400, detail="Conversation history too long")
 
     try:
-        
-        
-        
         # Map Conversation history
-        content = []
-        
-        content.append({"role": "system", "content": "Your name is SophiaAI. You should always be friendly. Use emoji in your responses. "})
+        content = [
+            {
+                "role": "system",
+                "content": "Your name is SophiaAI. You should always be friendly. Use emoji in your responses. ",
+            }
+        ]
 
         content.extend(
             {"role": message["role"], "content": message["content"]}
             for message in input.conversationHistory
         )
-        
+
         # Combine system prompt with user input
         # search Vector Database for user input.
         LastQuestion = input.conversationHistory[-1]["content"] # Users last question
-        RAG_Results = search_docs(LastQuestion, 3) 
+        RAG_Results = search_docs(LastQuestion, 3)
         # print(RAG_Results)
 
         combined_input = f"""
-        
         Use the following information to assist in answering the users question. Do not make anything up or guess. 
         {RAG_Results}
         If you don't know, simply let the user know. 
@@ -228,22 +226,23 @@ async def generateFromChatHistory(input: ChatRequest):
         """
         content.append({"role": "system", "content": combined_input})
         # print(content)
-        
-        
-
         # Generate response
         output = pipe(content, num_return_sequences=1, max_new_tokens=250)
 
         # Extract the generated text from the output
-
-        generated_text = output[0]["generated_text"]
-    
+        generated_text = output[0]["generated_text"] # Get the entire conversation history including new generated item
         # Structure the response
+        # Update supabase
+        response = supabase.table("Chats").update({"chat_history": generated_text}).eq("id", input.chatID).execute() # Update chat history - returns json object
+        if hasattr(response, 'error') and response.error:
+            raise HTTPException(
+                status_code=500, detail=f"Error updating chat history: {response.error}"
+    )
+        
         return {
             "status": "success",
             "generated_text": generated_text # generated_text[-1],  # return only the input prompt and the generated response
         }
-
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error generating response: {str(e)}"

@@ -76,8 +76,6 @@ def chunk_text(text, chunk_size=800, overlap=50):
     return chunks
 
 
-
-
 def search_docs(query, top_k=3):
     query_embedding = embeddings_model.encode(query)
     results = collection.query(

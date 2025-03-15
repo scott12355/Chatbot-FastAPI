@@ -6,3 +6,5 @@ numpy
 PyPDF2
 chromadb
 uvicorn
+supabase
+python-dotenv
