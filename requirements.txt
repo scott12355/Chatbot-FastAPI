@@ -1,3 +1,10 @@
-fastapi==0.99.1
+fastapi
 transformers
 torch
+sentence-transformers
+numpy
+PyPDF2
+chromadb
+uvicorn
+supabase
+python-dotenv
