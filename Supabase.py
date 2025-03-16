@@ -1,8 +1,10 @@
-def initSupabase():
-    import os
-    from dotenv import load_dotenv
-    from supabase import create_client, Client
+import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
+from fastapi import HTTPException
+from typing import List, Dict
     
+def initSupabase():
     # Load environment variables from .env file
     load_dotenv()
     
@@ -18,7 +20,7 @@ def initSupabase():
     return supabase
 
 
-def updateSupabaseChat(generated_text: List[Dict[str, str]], chat_id: int):
+def updateSupabaseChat(generated_text: List[Dict[str, str]], chat_id: int, supabase: Client):
     """
     Updates the chat history in Supabase.
 

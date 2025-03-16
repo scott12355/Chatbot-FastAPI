@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import FastAPI, HTTPException
 from transformers import pipeline
 import torch
@@ -40,7 +41,7 @@ except Exception as e:
     raise RuntimeError("Failed to initialize the model")
 
 # Define the system prompt that sets the behavior and role of the LLM
-SYSTEM_PROMPT = """"Your name is SophiaAI. You should always be friendly. Use emoji in your responses. """"
+SYSTEM_PROMPT = """Your name is SophiaAI. You should always be friendly. Use emoji in your responses. """
 
 # Serve the API docs as our landing page
 app = FastAPI(docs_url="/", title="21312701 - Chatbot Prof of Concept", version="1")
@@ -137,7 +138,7 @@ async def generateSingleResponse(input: str):
 
 class ChatRequest(BaseModel):
     conversationHistory: List[Dict[str, str]]
-    chatID: int
+    chatID: UUID
     model_config = {
         "json_schema_extra": {
             "example": {
@@ -231,7 +232,7 @@ async def generateFromChatHistory(input: ChatRequest):
         generated_text = output[0]["generated_text"] # Get the entire conversation history including new generated item
         generated_text.pop(0) # Remove the system prompt from the generated text
         
-        updateSupabaseChat(generated_text, input.chatID)# Update supabase
+        updateSupabaseChat(generated_text, input.chatID, supabase)# Update supabase
         return {
             "status": "success",
             "generated_text": generated_text # generated_text[-1],  # return only the input prompt and the generated response
