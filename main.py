@@ -44,7 +44,7 @@ except Exception as e:
 SYSTEM_PROMPT = """Your name is SophiaAI. You should always be friendly. Use emoji in your responses. """
 
 # Serve the API docs as our landing page
-app = FastAPI(docs_url="/", title="21312701 - Chatbot Prof of Concept", version="1")
+app = FastAPI(docs_url="/", title="SophiaAi Chatbot API - 21312701", version="1")
 print("App Startup Complete!")
 
 @app.get(
@@ -120,8 +120,7 @@ async def generateSingleResponse(input: str):
         generated_text = output[0]["generated_text"]
         print(generated_text)
         # Remove the system prompt from the generated text
-        generated_text[-1].pop(0)
-        print(generated_text[-1])
+        generated_text.pop(0)
         # Structure the response
         return {
             "status": "success",
