@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from transformers import pipeline
 import torch
-from Supabase import initSupabase
+from Supabase import initSupabase, updateSupabaseChat
 from supabase import Client
 from config import MODEL_CONFIG, RAG_CONFIG
 from typing import Dict, Any, List
@@ -40,7 +40,7 @@ except Exception as e:
     raise RuntimeError("Failed to initialize the model")
 
 # Define the system prompt that sets the behavior and role of the LLM
-SYSTEM_PROMPT = """You are a helpful AI assistant to educate people on the city of Manchester in England"""
+SYSTEM_PROMPT = """"Your name is SophiaAI. You should always be friendly. Use emoji in your responses. """"
 
 # Serve the API docs as our landing page
 app = FastAPI(docs_url="/", title="21312701 - Chatbot Prof of Concept", version="1")
@@ -115,10 +115,12 @@ async def generateSingleResponse(input: str):
         # Generate response
         output = pipe(content, num_return_sequences=1, max_new_tokens=250)
 
-        # Extract the generated text from the output
-
+        # Extract the conversation text from the output
         generated_text = output[0]["generated_text"]
         print(generated_text)
+        # Remove the system prompt from the generated text
+        generated_text[-1].pop(0)
+        print(generated_text[-1])
         # Structure the response
         return {
             "status": "success",
@@ -136,7 +138,6 @@ async def generateSingleResponse(input: str):
 class ChatRequest(BaseModel):
     conversationHistory: List[Dict[str, str]]
     chatID: int
-    
     model_config = {
         "json_schema_extra": {
             "example": {
@@ -181,6 +182,7 @@ class ChatRequest(BaseModel):
         500: API_RESPONSES[500]
     }
 )
+
 async def generateFromChatHistory(input: ChatRequest):
     """
     Generate AI responses based on a given conversation history.
@@ -202,7 +204,7 @@ async def generateFromChatHistory(input: ChatRequest):
         content = [
             {
                 "role": "system",
-                "content": "Your name is SophiaAI. You should always be friendly. Use emoji in your responses. ",
+                "content": SYSTEM_PROMPT,
             }
         ]
 
@@ -212,33 +214,24 @@ async def generateFromChatHistory(input: ChatRequest):
         )
 
         # Combine system prompt with user input
-        # search Vector Database for user input.
         LastQuestion = input.conversationHistory[-1]["content"] # Users last question
-        RAG_Results = search_docs(LastQuestion, 3)
-        # print(RAG_Results)
+        RAG_Results = search_docs(LastQuestion, 3)  # search Vector Database for user input.
 
         combined_input = f"""
         Use the following information to assist in answering the users question. Do not make anything up or guess. 
         {RAG_Results}
         If you don't know, simply let the user know. 
         Your responses will be sent directly to the user
-        
         """
+        
         content.append({"role": "system", "content": combined_input})
         # print(content)
         # Generate response
         output = pipe(content, num_return_sequences=1, max_new_tokens=250)
-
-        # Extract the generated text from the output
         generated_text = output[0]["generated_text"] # Get the entire conversation history including new generated item
-        # Structure the response
-        # Update supabase
-        response = supabase.table("Chats").update({"chat_history": generated_text}).eq("id", input.chatID).execute() # Update chat history - returns json object
-        if hasattr(response, 'error') and response.error:
-            raise HTTPException(
-                status_code=500, detail=f"Error updating chat history: {response.error}"
-    )
+        generated_text.pop(0) # Remove the system prompt from the generated text
         
+        updateSupabaseChat(generated_text, input.chatID)# Update supabase
         return {
             "status": "success",
             "generated_text": generated_text # generated_text[-1],  # return only the input prompt and the generated response
