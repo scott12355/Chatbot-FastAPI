@@ -2,7 +2,7 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException
 from transformers import pipeline
 import torch
-from Supabase import initSupabase, updateSupabaseChat
+from Supabase import initSupabase, updateSupabaseChatHistory, updateSupabaseChatStatus
 from supabase import Client
 from config import MODEL_CONFIG, RAG_CONFIG
 from typing import Dict, Any, List
@@ -193,6 +193,8 @@ async def generateFromChatHistory(input: ChatRequest):
     Args:
     input (ChatRequest): Structured request containing a list of previous responses"
     """
+    # Notify database a response is being generated so the user cannot update the chat
+    updateSupabaseChatStatus(True, input.chatID, supabase)    
     # Input validation
     if not input.conversationHistory or len(input.conversationHistory) == 0:
         raise HTTPException(status_code=400, detail="Conversation history cannot be empty")
@@ -232,12 +234,13 @@ async def generateFromChatHistory(input: ChatRequest):
         generated_text = output[0]["generated_text"] # Get the entire conversation history including new generated item
         generated_text.pop(0) # Remove the system prompt from the generated text
         
-        updateSupabaseChat(generated_text, input.chatID, supabase)# Update supabase
+        updateSupabaseChatHistory(generated_text, input.chatID, supabase)# Update supabase
         return {
             "status": "success",
             "generated_text": generated_text # generated_text[-1],  # return only the input prompt and the generated response
         }
     except Exception as e:
+        updateSupabaseChatStatus(False, input.chatID, supabase)  # Notify database that an a chat isn't being processed
         raise HTTPException(
             status_code=500, detail=f"Error generating response: {str(e)}"
         ) from e

@@ -20,7 +20,7 @@ def initSupabase():
     return supabase
 
 
-def updateSupabaseChat(generated_text: List[Dict[str, str]], chat_id: int, supabase: Client):
+def updateSupabaseChatHistory(generated_text: List[Dict[str, str]], chat_id: int, supabase: Client):
     """
     Updates the chat history in Supabase.
 
@@ -32,10 +32,32 @@ def updateSupabaseChat(generated_text: List[Dict[str, str]], chat_id: int, supab
         HTTPException: If there is an error updating Supabase.
     """
     try:
-        response = supabase.table("Chats").update({"chat_history": generated_text}).eq("id", chat_id).execute()
+        response = supabase.table("Chats").update({"chat_history": generated_text, "awaiting_response": 'FALSE'}).eq("id", chat_id).execute()
         if hasattr(response, 'error') and response.error:
             raise HTTPException(
                 status_code=500, detail=f"Error updating chat history: {response.error}"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error updating Supabase: {str(e)}"
+        ) from e
+        
+def updateSupabaseChatStatus(status: bool, chat_id: int, supabase: Client):
+    """
+    Updates the status of a chat in Supabase.
+
+    Args:
+        status: The status to update the chat to.
+        chat_id: The ID of the chat to update.
+
+    Raises:
+        HTTPException: If there is an error updating Supabase.
+    """
+    try:
+        response = supabase.table("Chats").update({"awaiting_response": status}).eq("id", chat_id).execute()
+        if hasattr(response, 'error') and response.error:
+            raise HTTPException(
+                status_code=500, detail=f"Error updating chat status: {response.error}"
             )
     except Exception as e:
         raise HTTPException(
