@@ -4,9 +4,8 @@ from transformers import pipeline
 import torch
 from Supabase import initSupabase, updateSupabaseChatHistory, updateSupabaseChatStatus
 from supabase import Client
-from config import MODEL_CONFIG, RAG_CONFIG
+from config import MODEL_CONFIG
 from typing import Dict, Any, List
-from fastapi.responses import JSONResponse
 from api_schemas import API_RESPONSES
 from VectorDB import *
 from pydantic import BaseModel
@@ -41,14 +40,174 @@ except Exception as e:
     raise RuntimeError("Failed to initialize the model")
 
 # Define the system prompt that sets the behavior and role of the LLM
-SYSTEM_PROMPT = """Your name is SophiaAI. You should always be friendly. Use emoji in your responses. """
+SYSTEM_PROMPT = """Your name is SophiaAI. You should always be friendly. Use emoji in all of your responses. """
 
 # Serve the API docs as our landing page
-app = FastAPI(docs_url="/", title="21312701 - Chatbot Prof of Concept", version="1")
+app = FastAPI(docs_url="/", title="SophiaAi - 21312701", version="1", description="SophiaAi is a Chatbot created for a university final project.\nDesigned to empower refugee women, there is a RAG pipeline containing resources to support refuges connected to a finetuned LLM.")
 print("App Startup Complete!")
 
+
+
+class ChatRequest(BaseModel):
+    conversationHistory: List[Dict[str, str]]
+    chatID: UUID
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "conversationHistory": [
+                    {
+                        "role": "user",
+                        "content": "hi"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Hello! How can I assist you today?"
+                    },
+                    {
+                        "role": "user",
+                        "content": "whats the weather in MCR"
+                    }
+                ],
+                "chatID": "123e4567-e89b-12d3-a456-426614174000"
+            }
+        }
+    }
+    
+
+@app.post(
+    "/generateFromChatHistory",
+    responses={
+        200: {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "generated_text": {
+                            "role": "assistant",
+                            "content": "I don't have real-time weather data for Manchester. To get accurate information, please check a weather service like BBC Weather or the Met Office website."
+                        }
+                    }
+                }
+            }
+        },
+        400: API_RESPONSES[400],
+        500: API_RESPONSES[500]
+    }
+)
+
+async def generateFromChatHistory(input: ChatRequest):
+    """
+    Generate AI responses based on a given conversation history.
+    Updates Supabase chat
+    
+
+    Args:
+    input (ChatRequest): Structured request containing a list of previous responses"
+    """
+    # Notify database a response is being generated so the user cannot update the chat
+    # Input validation
+    if not input.conversationHistory or len(input.conversationHistory) == 0:
+        raise HTTPException(status_code=400, detail="Conversation history cannot be empty")
+
+    if len(input.conversationHistory) > MODEL_CONFIG["max_conversation_history_size"]:  # Arbitrary limit to avoid overloading LLM, adjust as needed
+        raise HTTPException(status_code=400, detail="Conversation history too long")
+
+    try:
+        # Map Conversation history
+        content = [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT,
+            }
+        ]
+        content.extend(
+            {"role": message["role"], "content": message["content"]}
+            for message in input.conversationHistory
+        )
+        updateSupabaseChatHistory(content[1:], input.chatID, supabase, True) # Update supabase
+
+        # Combine system prompt with user input
+        LastQuestion = input.conversationHistory[-1]["content"] # Users last question
+        RAG_Results = search_docs(LastQuestion, 3)  # search Vector Database for user input.
+
+        combined_input = f"""
+        Use the following information to assist in answering the users question most recent question. Do not make anything up or guess. 
+        {RAG_Results}
+        If you don't know, simply let the user know. 
+        Your responses will be sent directly to the user
+        """
+        
+        content.append({"role": "system", "content": combined_input})
+        # print(content)
+        # Generate response
+        output = pipe(content, num_return_sequences=1, max_new_tokens=250)
+        generated_text = output[0]["generated_text"] # Get the entire conversation history including new generated item
+        generated_text.pop(0) # Remove the system prompt from the generated text
+        
+        updateSupabaseChatHistory(generated_text, input.chatID, supabase)# Update supabase
+        return {
+            "status": "success",
+            "generated_text": generated_text # generated_text[-1],  # return only the input prompt and the generated response
+        }
+    except Exception as e:
+        updateSupabaseChatStatus(False, input.chatID, supabase)  # Notify database that an a chat isn't being processed
+        raise HTTPException(
+            status_code=500, detail=f"Error generating response: {str(e)}"
+        ) from e
+
 @app.get(
-    "/generateSingleResponse",
+    "/test-searchRAG",
+    responses={
+        200: {
+            "description": "Successful RAG search results",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "results": [
+                            {"content": "Example content 1", "metadata": {"source": "doc1.pdf"}},
+                            {"content": "Example content 2", "metadata": {"source": "doc2.pdf"}}
+                        ]
+                    }
+                }
+            }
+        },
+        400: API_RESPONSES[400],
+        500: API_RESPONSES[500]
+    }
+)
+async def search_rag(query: str, limit: int = 3):
+    """
+    Search the RAG system directly with a query
+    Args:
+        query (str): The search query
+        limit (int): Maximum number of results to return (default: 3
+    Returns:
+        Dict: Search results with relevant document
+    Raises:
+        HTTPException: If the query is invalid or search fails
+    """
+    # Input validation
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="Search query cannot be empty")
+    if len(query) > 1000:  # Arbitrary limit
+        raise HTTPException(status_code=400, detail="Query text too long")
+    try:
+        # Get results from vector database
+        results = search_docs(query, limit)
+        
+        return {
+            "status": "success",
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error searching documents: {str(e)}"
+        ) from e
+
+@app.get(
+    "/test-generateSingleResponse",
     responses={
         200: {
             "description": "Successful response",
@@ -120,8 +279,6 @@ async def generateSingleResponse(input: str):
         generated_text = output[0]["generated_text"]
         print(generated_text)
         # Remove the system prompt from the generated text
-        generated_text[-1].pop(0)
-        print(generated_text[-1])
         # Structure the response
         return {
             "status": "success",
@@ -134,36 +291,8 @@ async def generateSingleResponse(input: str):
         ) from e
 
 
-
-
-class ChatRequest(BaseModel):
-    conversationHistory: List[Dict[str, str]]
-    chatID: UUID
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "conversationHistory": [
-                    {
-                        "role": "user",
-                        "content": "hi"
-                    },
-                    {
-                        "role": "assistant",
-                        "content": "Hello! How can I assist you today?"
-                    },
-                    {
-                        "role": "user",
-                        "content": "whats the weather in MCR"
-                    }
-                ],
-                "chatID": 0
-            }
-        }
-    }
-    
-
-@app.post(
-    "/generateFromChatHistory",
+@app.get(
+    "/status",
     responses={
         200: {
             "description": "Successful response",
@@ -171,77 +300,15 @@ class ChatRequest(BaseModel):
                 "application/json": {
                     "example": {
                         "status": "success",
-                        "generated_text": {
-                            "role": "assistant",
-                            "content": "I don't have real-time weather data for Manchester. To get accurate information, please check a weather service like BBC Weather or the Met Office website."
-                        }
+                        "message": "Service is running"
                     }
                 }
             }
-        },
-        400: API_RESPONSES[400],
-        500: API_RESPONSES[500]
+        }
     }
 )
-
-async def generateFromChatHistory(input: ChatRequest):
+async def status():
     """
-    Generate AI responses based on a given conversation history.
-    Updates Supabase chat
-    
-
-    Args:
-    input (ChatRequest): Structured request containing a list of previous responses"
+    Check the service status
     """
-    # Notify database a response is being generated so the user cannot update the chat
-    updateSupabaseChatStatus(True, input.chatID, supabase)    
-    # Input validation
-    if not input.conversationHistory or len(input.conversationHistory) == 0:
-        raise HTTPException(status_code=400, detail="Conversation history cannot be empty")
-
-    if len(input.conversationHistory) > MODEL_CONFIG["max_conversation_history_size"]:  # Arbitrary limit to avoid overloading LLM, adjust as needed
-        raise HTTPException(status_code=400, detail="Conversation history too long")
-
-    try:
-        # Map Conversation history
-        content = [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT,
-            }
-        ]
-
-        content.extend(
-            {"role": message["role"], "content": message["content"]}
-            for message in input.conversationHistory
-        )
-
-        # Combine system prompt with user input
-        LastQuestion = input.conversationHistory[-1]["content"] # Users last question
-        RAG_Results = search_docs(LastQuestion, 3)  # search Vector Database for user input.
-
-        combined_input = f"""
-        Use the following information to assist in answering the users question. Do not make anything up or guess. 
-        {RAG_Results}
-        If you don't know, simply let the user know. 
-        Your responses will be sent directly to the user
-        """
-        
-        content.append({"role": "system", "content": combined_input})
-        # print(content)
-        # Generate response
-        output = pipe(content, num_return_sequences=1, max_new_tokens=250)
-        generated_text = output[0]["generated_text"] # Get the entire conversation history including new generated item
-        generated_text.pop(0) # Remove the system prompt from the generated text
-        
-        updateSupabaseChatHistory(generated_text, input.chatID, supabase)# Update supabase
-        return {
-            "status": "success",
-            "generated_text": generated_text # generated_text[-1],  # return only the input prompt and the generated response
-        }
-    except Exception as e:
-        updateSupabaseChatStatus(False, input.chatID, supabase)  # Notify database that an a chat isn't being processed
-        raise HTTPException(
-            status_code=500, detail=f"Error generating response: {str(e)}"
-        ) from e
-
+    return {"status": "success", "message": "Service is running"}

@@ -1,7 +1,6 @@
 from transformers import pipeline
 from sentence_transformers import SentenceTransformer
 from config import RAG_CONFIG
-from fastapi.responses import JSONResponse
 import os
 from PyPDF2 import PdfReader
 import chromadb
@@ -26,7 +25,7 @@ def initRAG(device):
         texts = load_pdfs(RAG_CONFIG["path"])
         all_chunks = []
         for text in texts:
-            all_chunks.extend(chunk_text(text, chunk_size=500, overlap=100))
+            all_chunks.extend(chunk_text(text, chunk_size=100, overlap=5))
 
         # Generate embeddings and add to ChromaDB
         embeddings = embeddings_model.encode(all_chunks)
@@ -51,7 +50,7 @@ def load_pdfs(directory):
     return texts
 
 
-def chunk_text(text, chunk_size=800, overlap=50):
+def chunk_text(text, chunk_size=100, overlap=10):
     words = text.split()
     chunks = []
     i = 0
@@ -81,4 +80,8 @@ def search_docs(query, top_k=3):
     results = collection.query(
         query_embeddings=[query_embedding.tolist()], n_results=top_k
     )
-    return "\n\n".join(results["documents"][0])
+
+
+    return "".join(
+        f"Result {i + 1}:\n{doc}\n\n" for i, doc in enumerate(results["documents"][0]) # type: ignore
+    )

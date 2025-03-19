@@ -5,7 +5,7 @@ MODEL_CONFIG = {
     "max_new_tokens": 250,
     "num_return_sequences": 1,
     "batch_size": 8,
-    "max_conversation_history_size": 10
+    "max_conversation_history_size": 100
 } 
 
 RAG_CONFIG = {

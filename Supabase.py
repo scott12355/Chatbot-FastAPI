@@ -20,7 +20,7 @@ def initSupabase():
     return supabase
 
 
-def updateSupabaseChatHistory(generated_text: List[Dict[str, str]], chat_id: int, supabase: Client):
+def updateSupabaseChatHistory(generated_text: List[Dict[str, str]], chat_id: int, supabase: Client, status: bool = False):
     """
     Updates the chat history in Supabase.
 
@@ -32,7 +32,7 @@ def updateSupabaseChatHistory(generated_text: List[Dict[str, str]], chat_id: int
         HTTPException: If there is an error updating Supabase.
     """
     try:
-        response = supabase.table("Chats").update({"chat_history": generated_text, "awaiting_response": 'FALSE'}).eq("id", chat_id).execute()
+        response = supabase.table("Chats").update({"chat_history": generated_text, "awaiting_response": status}).eq("id", chat_id).execute()
         if hasattr(response, 'error') and response.error:
             raise HTTPException(
                 status_code=500, detail=f"Error updating chat history: {response.error}"
