@@ -31,10 +31,13 @@ try:
         "text-generation",
         model=MODEL_CONFIG["model_name"],
         device=device,
-        max_new_tokens=512,
-        do_sample=True,
-        temperature=0.7,
-    )
+        max_new_tokens=256,
+        temperature=0.3,
+        do_sample=True, # Allow sampling to generate diverse responses. More conversational and human-like
+        top_k=50, # Limit the top-k tokens to sample from
+        top_p=0.95, # Limit the cumulative probability distribution for sampling
+        # num_beams=2, # Use beam search to generate multiple responses... too slow 
+        )
 except Exception as e:
     print(f"Error loading model: {str(e)}")
     raise RuntimeError("Failed to initialize the model")
@@ -131,14 +134,23 @@ async def generateFromChatHistory(input: ChatRequest):
         LastQuestion = input.conversationHistory[-1]["content"] # Users last question
         RAG_Results = search_docs(LastQuestion, 3)  # search Vector Database for user input.
 
-        combined_input = f"""
+        # Retrieve RAG results
+        RAG_Results = search_docs(LastQuestion, 3)
+        RagPrompt = f"""
         Use the following information to assist in answering the users question most recent question. Do not make anything up or guess. 
-        {RAG_Results}
-        If you don't know, simply let the user know. 
-        Your responses will be sent directly to the user
+        Relevant information retrieved: {RagPrompt}
+        
+        If you don't know, simply let the user know, or ask for more detail.
         """
         
-        content.append({"role": "system", "content": combined_input})
+
+        # Append RAG results with a dedicated role
+        rag_message = {
+            "role": "knowledge",
+            "content": f"Relevant information retrieved: {RagPrompt}"
+        }
+        content.append(rag_message)
+        
         # print(content)
         # Generate response
         output = pipe(content, num_return_sequences=1, max_new_tokens=250)
