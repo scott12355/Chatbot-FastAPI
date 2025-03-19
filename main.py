@@ -43,7 +43,9 @@ except Exception as e:
     raise RuntimeError("Failed to initialize the model")
 
 # Define the system prompt that sets the behavior and role of the LLM
-SYSTEM_PROMPT = """Your name is SophiaAI. You should always be friendly. Use emoji in all of your responses. """
+SYSTEM_PROMPT = """Your name is SophiaAI. 
+You are a friendly chatbot designed to assist refugee women with their questions.
+You should always be friendly. Use emoji in all of your responses to be relatable. You may consider 😊😌🤗 """
 
 # Serve the API docs as our landing page
 app = FastAPI(docs_url="/", title="SophiaAi - 21312701", version="1", description="SophiaAi is a Chatbot created for a university final project.\nDesigned to empower refugee women, there is a RAG pipeline containing resources to support refuges connected to a finetuned LLM.")
@@ -136,18 +138,17 @@ async def generateFromChatHistory(input: ChatRequest):
 
         # Retrieve RAG results
         RAG_Results = search_docs(LastQuestion, 3)
-        RagPrompt = f"""
-        Use the following information to assist in answering the users question most recent question. Do not make anything up or guess. 
-        Relevant information retrieved: {RagPrompt}
-        
-        If you don't know, simply let the user know, or ask for more detail.
-        """
+        RagPrompt = f"""_RAG_
+Use the following information to assist in answering the users question most recent question. Do not make anything up or guess. 
+Relevant information retrieved: {RAG_Results}
+
+If you don't know, simply let the user know, or ask for more detail. The user has not seen this message, it is for your reference only."""
         
 
         # Append RAG results with a dedicated role
         rag_message = {
-            "role": "knowledge",
-            "content": f"Relevant information retrieved: {RagPrompt}"
+            "role": "user",
+            "content": RagPrompt
         }
         content.append(rag_message)
         
