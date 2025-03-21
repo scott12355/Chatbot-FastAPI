@@ -23,7 +23,6 @@ else:
 initRAG(device)
 supabase: Client = initSupabase()
 
-# print(search_docs("how much employment in manchester"))
 
 # Initialize the LLM
 try:
@@ -31,12 +30,12 @@ try:
         "text-generation",
         model=MODEL_CONFIG["model_name"],
         device=device,
-        max_new_tokens=256,
+        max_new_tokens=MODEL_CONFIG["max_new_tokens"],
         temperature=0.3,
         do_sample=True, # Allow sampling to generate diverse responses. More conversational and human-like
         top_k=50, # Limit the top-k tokens to sample from
         top_p=0.95, # Limit the cumulative probability distribution for sampling
-        # num_beams=2, # Use beam search to generate multiple responses... too slow 
+        quantize=True, # Quantize the model for faster inference 
         )
 except Exception as e:
     print(f"Error loading model: {str(e)}")
@@ -44,9 +43,10 @@ except Exception as e:
 
 # Define the system prompt that sets the behavior and role of the LLM
 SYSTEM_PROMPT = """Your name is SophiaAI. 
-You are a friendly chatbot designed to assist refugee women with their questions.
-You should always be friendly. Use emoji in all of your responses to be relatable. You may consider 😊😌🤗 """
-
+You are a friendly and empathetic assistant designed to empower refugee women and help with any questions.
+You should always be friendly. Use emoji in all of your responses to be relatable. You may consider 😊😌🤗 
+Once you have answered a question, you should check if the user would like more detail on a specific area.
+"""
 # Serve the API docs as our landing page
 app = FastAPI(docs_url="/", title="SophiaAi - 21312701", version="1", description="SophiaAi is a Chatbot created for a university final project.\nDesigned to empower refugee women, there is a RAG pipeline containing resources to support refuges connected to a finetuned LLM.")
 print("App Startup Complete!")
@@ -154,7 +154,7 @@ If you don't know, simply let the user know, or ask for more detail. The user ha
         
         # print(content)
         # Generate response
-        output = pipe(content, num_return_sequences=1, max_new_tokens=250)
+        output = pipe(content, num_return_sequences=1, max_new_tokens=MODEL_CONFIG["max_new_tokens"])
         generated_text = output[0]["generated_text"] # Get the entire conversation history including new generated item
         generated_text.pop(0) # Remove the system prompt from the generated text
         
@@ -286,7 +286,7 @@ async def generateSingleResponse(input: str):
         ]
 
         # Generate response
-        output = pipe(content, num_return_sequences=1, max_new_tokens=250)
+        output = pipe(content, num_return_sequences=1, max_new_tokens=MODEL_CONFIG["max_new_tokens"])
 
         # Extract the conversation text from the output
         generated_text = output[0]["generated_text"]
