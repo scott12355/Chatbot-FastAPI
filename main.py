@@ -9,6 +9,8 @@ from typing import Dict, Any, List
 from api_schemas import API_RESPONSES
 from VectorDB import *
 from pydantic import BaseModel
+from llama_cpp import Llama
+
 
 
 # Pick the best available device - MPS (Mac), CUDA (NVIDIA), or CPU
@@ -26,17 +28,18 @@ supabase: Client = initSupabase()
 
 # Initialize the LLM
 try:
-    pipe = pipeline(
-        "text-generation",
-        model=MODEL_CONFIG["model_name"],
+    model = Llama.from_pretrained(
+	    repo_id="Mungert/Qwen2.5-3B-Instruct-GGUF",
+	    filename="Qwen2.5-3B-Instruct-bf16-q4_k.gguf",
         device=device,
-        max_new_tokens=MODEL_CONFIG["max_new_tokens"],
+        n_ctx=4096,  # Adjust the context window size (in tokens)
         temperature=0.3,
         do_sample=True, # Allow sampling to generate diverse responses. More conversational and human-like
         top_k=50, # Limit the top-k tokens to sample from
         top_p=0.95, # Limit the cumulative probability distribution for sampling
-        quantize=True, # Quantize the model for faster inference 
-        )
+        device_map=device,
+        max_new_tokens=MODEL_CONFIG["max_new_tokens"],)
+    
 except Exception as e:
     print(f"Error loading model: {str(e)}")
     raise RuntimeError("Failed to initialize the model")
@@ -134,8 +137,6 @@ async def generateFromChatHistory(input: ChatRequest):
 
         # Combine system prompt with user input
         LastQuestion = input.conversationHistory[-1]["content"] # Users last question
-        RAG_Results = search_docs(LastQuestion, 3)  # search Vector Database for user input.
-
         # Retrieve RAG results
         RAG_Results = search_docs(LastQuestion, 3)
         RagPrompt = f"""_RAG_
@@ -154,10 +155,8 @@ If you don't know, simply let the user know, or ask for more detail. The user ha
         
         # print(content)
         # Generate response
-        output = pipe(content, num_return_sequences=1, max_new_tokens=MODEL_CONFIG["max_new_tokens"])
-        generated_text = output[0]["generated_text"] # Get the entire conversation history including new generated item
-        generated_text.pop(0) # Remove the system prompt from the generated text
-        
+        output = model.create_chat_completion(content, max_tokens=MODEL_CONFIG["max_new_tokens"])
+        generated_text = output["choices"][0]["message"]["content"]
         updateSupabaseChatHistory(generated_text, input.chatID, supabase)# Update supabase
         return {
             "status": "success",
