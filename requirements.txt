@@ -4,6 +4,7 @@ torch
 sentence-transformers
 numpy
 PyPDF2
+python-docx
 chromadb
 uvicorn
 supabase

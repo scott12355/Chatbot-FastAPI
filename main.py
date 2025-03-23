@@ -179,8 +179,8 @@ If you don't know, simply let the user know, or ask for more detail. The user ha
                     "example": {
                         "status": "success",
                         "results": [
-                            {"content": "Example content 1", "metadata": {"source": "doc1.pdf"}},
-                            {"content": "Example content 2", "metadata": {"source": "doc2.pdf"}}
+                            {"content": "Example content 1", "similarity_score": "0.7"},
+                            {"content": "Example content 2", "similarity_score": "0.8"}
                         ]
                     }
                 }
