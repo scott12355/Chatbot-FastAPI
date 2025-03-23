@@ -6,7 +6,7 @@ from PyPDF2 import PdfReader
 import chromadb
 
 # Initialize the embeddings model
-embeddings_model = SentenceTransformer("BAAI/bge-base-en-v1.5")
+embeddings_model = SentenceTransformer("intfloat/e5-large-v2")
 
 # Create or get collection
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
@@ -35,9 +35,6 @@ def initRAG(device):
             ids=[f"doc_{i}" for i in range(len(all_chunks))],
         )
 
-
-
-
 def load_pdfs(directory):
     texts = []
     for filename in os.listdir(directory):
@@ -50,7 +47,7 @@ def load_pdfs(directory):
     return texts
 
 
-def chunk_text(text, chunk_size=100, overlap=10):
+def chunk_text(text, chunk_size=200, overlap=0):
     words = text.split()
     chunks = []
     i = 0
@@ -80,8 +77,17 @@ def search_docs(query, top_k=3):
     results = collection.query(
         query_embeddings=[query_embedding.tolist()], n_results=top_k
     )
-
-
-    return "".join(
-        f"Result {i + 1}:\n{doc}\n\n" for i, doc in enumerate(results["documents"][0]) # type: ignore
-    )
+    
+    formatted_results = []
+    for i in range(len(results["documents"][0])):
+        doc = results["documents"][0][i]
+        distance = results["distances"][0][i] if "distances" in results else 0
+        similarity = 1 - distance  # Convert distance to similarity score
+        
+        formatted_result = {
+            "content": doc,
+            "similarity_score": f"{similarity:.2f}",
+        }
+        formatted_results.append(formatted_result)
+    
+    return formatted_results

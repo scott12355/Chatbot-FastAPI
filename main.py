@@ -29,13 +29,13 @@ try:
     pipe = pipeline(
         "text-generation",
         model=MODEL_CONFIG["model_name"],
-        device=device,
         max_new_tokens=MODEL_CONFIG["max_new_tokens"],
         temperature=0.3,
         do_sample=True, # Allow sampling to generate diverse responses. More conversational and human-like
         top_k=50, # Limit the top-k tokens to sample from
         top_p=0.95, # Limit the cumulative probability distribution for sampling
-        quantize=True, # Quantize the model for faster inference 
+        device=device,
+        num_return_sequences=1
         )
 except Exception as e:
     print(f"Error loading model: {str(e)}")
