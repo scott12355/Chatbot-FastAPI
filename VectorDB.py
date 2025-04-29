@@ -21,7 +21,17 @@ collection = chroma_client.get_or_create_collection(
 )
 
 def initRAG(device):
+    global embeddings_model
+    # Try to move to device if specified
+    if device and device != "cpu":
+        try:
+            embeddings_model = embeddings_model.to(device)
+            print(f"Using device: {device} for embeddings")
+        except Exception as e:
+            print(f"Error moving model to {device}, using CPU instead: {e}")
+    
     # Initialize documents if collection is empty
+    
     if collection.count() == 0:
         print("Loading documents into ChromaDB...")
         pdf_texts = load_pdfs(RAG_CONFIG["path"])
@@ -35,7 +45,7 @@ def initRAG(device):
         # check for ''
         all_chunks = [chunk for chunk in all_chunks if chunk.strip()] 
         print(f"Total number of chunks: {len(all_chunks)}")
-        print(all_chunks)
+        # print(all_chunks)
 
         # Generate embeddings and add to ChromaDB
         embeddings = embeddings_model.encode(all_chunks)

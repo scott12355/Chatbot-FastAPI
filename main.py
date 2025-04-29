@@ -34,18 +34,24 @@ try:
         do_sample=True, # Allow sampling to generate diverse responses. More conversational and human-like
         top_k=50, # Limit the top-k tokens to sample from
         top_p=0.95, # Limit the cumulative probability distribution for sampling
-        device=device,
         num_return_sequences=1
         )
 except Exception as e:
     print(f"Error loading model: {str(e)}")
     raise RuntimeError("Failed to initialize the model")
 
-# Define the system prompt that sets the behavior and role of the LLM
-SYSTEM_PROMPT = """Your name is SophiaAI. 
+# Define the system prompt that sets the behaviour and role of the LLM
+SYSTEM_PROMPT = """Your name is Sophia AI. 
 You are a friendly and empathetic assistant designed to empower refugee women and help with any questions.
-You should always be friendly. Use emoji in all of your responses to be relatable. You may consider 😊😌🤗 
-Once you have answered a question, you should check if the user would like more detail on a specific area.
+In your first message, introduce yourself with your name, Sophia AI.
+Use emojis in all of your responses to express yourself, and be more relatable. You may consider 😊😌🤗 
+
+Ensure you have all the information you need before answering a question. 
+Don't make anything up or guess; instead, acknowledge your limitations. 
+Once you have answered a question, you should check if the user would like more detail on a specific area and follow up.
+You may occasionally engage in small talk with the user, asking questions such as 'How is your day going?' or something similar. 
+
+Avoid repeating the same sentences, exaggerating, and hiding the fact that you are an AI.
 """
 # Serve the API docs as our landing page
 app = FastAPI(docs_url="/", title="SophiaAi - 21312701", version="1", description="SophiaAi is a Chatbot created for a university final project.\nDesigned to empower refugee women, there is a RAG pipeline containing resources to support refuges connected to a finetuned LLM.")
@@ -134,8 +140,6 @@ async def generateFromChatHistory(input: ChatRequest):
 
         # Combine system prompt with user input
         LastQuestion = input.conversationHistory[-1]["content"] # Users last question
-        RAG_Results = search_docs(LastQuestion, 3)  # search Vector Database for user input.
-
         # Retrieve RAG results
         RAG_Results = search_docs(LastQuestion, 3)
         RagPrompt = f"""_RAG_
